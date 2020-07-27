@@ -8,3 +8,4 @@ CMakeLists.txt
 
 data/
 *log*
+*.exe
