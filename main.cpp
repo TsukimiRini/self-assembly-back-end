@@ -339,7 +339,6 @@ void Agent::get_best_action(int para_set_mode, int W, bool strict_, bool is_para
     }
 }
 
-
 // if multiple threads, before take actions, center.agent_poses must be cleared
 void Agent::take_action()
 {
@@ -504,8 +503,64 @@ void Agent::parallel_running(bool incremental, double decay_ratio, int method, i
     pos_y = next_y;
 }
 
+int get_a_num(int width, int height)
+{
+    string dictionary, out_dict;
+    if (RUN_ENV == "WIN")
+    {
+        //        dictionary =
+        //                "D:\\projects\\CLionProjects\\InitSettingGenerator\\exp\\" + to_string(width) + '_' + to_string(height);
+        dictionary = ".\\data\\" + to_string(width) + '_' + to_string(height);
+        out_dict = ".\\data\\method";
+    }
+    else if (RUN_ENV == "MAC")
+    {
+        dictionary =
+            "/Users/chuwenjie/CLionProjects/InitSettingGenerator/supp_display/" + to_string(width) + '_' + to_string(height);
+        out_dict = "/Users/chuwenjie/CLionProjects/AssemblyShape/exp";
+    }
+    else
+    {
+        dictionary = "./exp/" + to_string(width) + '*' + to_string(height);
+        out_dict = "./exp";
+    }
+
+    DIR *dir;
+    struct dirent *ptr;
+    const char *p = dictionary.c_str();
+    int a_num;
+    if ((dir = opendir(p)) == NULL)
+    {
+        cout << p << endl;
+        perror("Open dir error...");
+        exit(1);
+    }
+    while ((ptr = readdir(dir)) != NULL)
+    {
+        if (string(ptr->d_name).compare(0, 4, "grid") == 0) //file
+        {
+            string temp;
+            if (RUN_ENV == "WIN")
+            {
+                temp = dictionary + '\\' + ptr->d_name;
+            }
+            else
+            {
+                temp = dictionary + '/' + ptr->d_name;
+            }
+            string _post = ptr->d_name;
+            int shape_num = _post[5] - '0';
+            a_num = atoi(_post.substr(7, _post.size() - 11).c_str());
+            _post = _post.substr(4, _post.size() - 4);
+        }
+    }
+    closedir(dir);
+    return a_num;
+}
+
 /*random initilization*/
-int oneStep()
+// poses size: 2*swarm size; lock_stat size: swarm size
+int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, int *poses, int *lock_stat, int *ac_tar, int *mv_agent, bool start)
 {
     string dictionary, out_dict;
     if (RUN_ENV == "WIN")
@@ -620,6 +675,7 @@ int oneStep()
             swarm.push_back(Agent());
         }
 
+        cout << "asdasd" << endl;
         int exp_num = 20;
         double exp_avg_iter = 0;
         double exp_avg_iter_t = 0;
@@ -682,19 +738,32 @@ int oneStep()
         infile.close();
         //                cout<<"swarm init"<<endl;
         //initialize the positions of agents
-        int max_size = valid_l.size();
-        srand((unsigned)time(NULL));
-        for (int r = 0; r < a_num_s[f]; r++)
+        if (start)
         {
-            int rand_p = rand() % max_size;
-            int px = (int)valid_l[rand_p] / height;
-            int py = (int)valid_l[rand_p] % height;
-            swarm[r].set_config(r, px, py, 2);
-            center.agent_poses[px][py] = r;
-            int tmp = valid_l[max_size - 1];
-            valid_l[max_size - 1] = valid_l[rand_p];
-            valid_l[rand_p] = tmp;
-            max_size--;
+            int max_size = valid_l.size();
+            srand((unsigned)time(NULL));
+            for (int r = 0; r < a_num_s[f]; r++)
+            {
+                int rand_p = rand() % max_size;
+                int px = (int)valid_l[rand_p] / height;
+                int py = (int)valid_l[rand_p] % height;
+                swarm[r].set_config(r, px, py, 2);
+                center.agent_poses[px][py] = r;
+                int tmp = valid_l[max_size - 1];
+                valid_l[max_size - 1] = valid_l[rand_p];
+                valid_l[rand_p] = tmp;
+                max_size--;
+            }
+        }
+        else // restore agent poses data
+        {
+            for (int r = 0; r < a_num_s[f]; r++)
+            {
+                int px = poses[2 * r];
+                int py = poses[2 * r + 1];
+                swarm[r].set_config(r, px, py, 2);
+                center.agent_poses[px][py] = r;
+            }
         }
         //                cout<<"swarm refresh"<<endl;
         //record the initialization
@@ -720,10 +789,12 @@ int oneStep()
             if (k < a_num_s[f] - 1)
             {
                 outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
+                // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
             }
             else
             {
                 outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
+                // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << endl;
             }
         }
         outfile << endl;
@@ -758,14 +829,24 @@ int oneStep()
         double decay_ratio = decay_ratio_s[shape_nums[f]];
         // 0-5,linear & Man,linear & O,inverse & Man,inverse & O,inverse & improved Man,inverse square & O
         int method = method_s[shape_nums[f]]; //only useful when increment_update_light=true
-        if (increment_update_light)
+
+        if (start)
         {
-            center.multi_shared_calculation();
+            if (increment_update_light)
+            {
+                center.multi_shared_calculation();
+            }
+            else
+            {
+                center.info.ac_tar = a_num_s[f];
+            }
         }
-        else
+        else // restore center data
         {
-            center.info.ac_tar = a_num_s[f];
+            center.info.ac_tar = ac_tar[0];
+            center.info.mv_agent = mv_agent[0];
         }
+
         //一定概率下不动为最优动作的agent可选择坏的动作
         double prob = prob_s[shape_nums[f]];
         bool local = false; //表征在agent未进入目标区域前除了blue_light还需不需要计算local内的red_light
@@ -773,8 +854,8 @@ int oneStep()
         //supplementary variables for recording & execution
         vector<thread> threads;
         //default_random_engine generator{random_device{}()};
-        int terminal = 0;
-        int minor_terminal = 0;
+        int terminal = termi;
+        int minor_terminal = minor_termi[0];
         clock_t startT, endT;
         vector<double> dec_times;
 
@@ -783,214 +864,291 @@ int oneStep()
         vector<int> mv_agent_records;
         //                cout << "At beginning: "<<center.info.ac_tar << endl;
         //                while (center.info.ac_tar > 0 && terminal < 6000 and minor_terminal < 4000) {
-        while (center.info.ac_tar > 0 && terminal < 1000 and minor_terminal < 500)
-        {
-            center.info.mv_agent = 0;
-            cout << center.info.ac_tar << endl;
-            terminal += 1;
-            startT = clock();
-            int left = int(a_num_s[f] % THREAD_NUM);
-            int alloc = 0;
-            int s_ids[THREAD_NUM];
-            int e_ids[THREAD_NUM];
-            srand(time(NULL));
-            for (int k = 0; k < THREAD_NUM; k++)
-            {
-                s_ids[k] = -1, e_ids[k] = -1;
-                if (left > alloc)
-                {
-                    s_ids[k] = k * (int(a_num_s[f] / THREAD_NUM) + 1);
-                    e_ids[k] = s_ids[k] + int(a_num_s[f] / THREAD_NUM);
-                    alloc++;
-                }
-                else
-                {
-                    s_ids[k] = alloc * (int(a_num_s[f] / THREAD_NUM) + 1) +
-                               (k - alloc) * int(a_num_s[f] / THREAD_NUM);
-                    e_ids[k] = s_ids[k] + int(a_num_s[f] / THREAD_NUM) - 1;
-                }
-            }
 
-            bool is_parallel = true;
-            for (int k = 0; k < THREAD_NUM; k++)
-            {
-                threads.emplace_back(parallel_swarms, k, s_ids[k], e_ids[k], increment_update_light,
-                                     decay_ratio,
-                                     method, para_set_mode, W1, strict_, is_parallel, terminal, prob, increment_update_light, local);
-            }
-            // 等待其他线程join
-            for (int k = 0; k < THREAD_NUM; k++)
-            {
-                threads[k].join();
-            }
-            threads.clear();
+        // restore mutex locks
+        // for (int k = 0; k < swarm.size(); k++)
+        // {
+        //     if (lock_stat[k])
+        //     {
+        //         cout << k << endl;
+        //         swarm[k].guard = unique_lock<mutex>(locks[swarm[k].pos_x][swarm[k].pos_y]);
+        //         swarm[k].guard.lock();
+        //     }
+        // }
 
-            endT = clock();
-            dec_times.push_back((double)(endT - startT));
+        // ===========================OneStep Main Logic===================================
+        center.info.mv_agent = 0;
+        cout << center.info.ac_tar << endl;
+        terminal += 1;
+        startT = clock();
+        int left = int(a_num_s[f] % THREAD_NUM);
+        int alloc = 0;
+        int s_ids[THREAD_NUM];
+        int e_ids[THREAD_NUM];
+        srand(time(NULL));
+        for (int k = 0; k < THREAD_NUM; k++)
+        {
+            s_ids[k] = -1, e_ids[k] = -1;
+            if (left > alloc)
+            {
+                s_ids[k] = k * (int(a_num_s[f] / THREAD_NUM) + 1);
+                e_ids[k] = s_ids[k] + int(a_num_s[f] / THREAD_NUM);
+                alloc++;
+            }
+            else
+            {
+                s_ids[k] = alloc * (int(a_num_s[f] / THREAD_NUM) + 1) +
+                           (k - alloc) * int(a_num_s[f] / THREAD_NUM);
+                e_ids[k] = s_ids[k] + int(a_num_s[f] / THREAD_NUM) - 1;
+            }
+        }
 
-            //record new positions for all agents
-            outfile << "agent positions:" << endl;
-            for (int k = 0; k < a_num_s[f]; k++)
-            {
-                if (k < a_num_s[f] - 1)
-                {
-                    outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
-                }
-                else
-                {
-                    outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
-                }
-            }
-            outfile << endl;
-            ac_tar_decay.push_back(center.info.ac_tar);
-            if (para_set_mode == 2)
-            {
-                W1 = double(center.info.ac_tar) / a_num_s[f];
-            }
-            else if (para_set_mode == 3)
-            {
-                //                        W1 = sqrt(double(center.info.ac_tar) / a_num_s[f]);
-                W1 = log((center.info.ac_tar + 1)) / log(a_num_s[f] + 1);
-            }
-            else if (para_set_mode == 4)
-            {
-                W1 = 0.5 * sin(double(center.info.ac_tar) / a_num_s[f] * PI - PI * 0.5) + 0.5;
-            }
-            else if (para_set_mode == 1 && W1 == 0)
-            {
-                int mm = ac_tar_decay.size() - 10;
-                int min_pos = max(0, mm);
-                double avg_decay = double(ac_tar_decay[min_pos] - ac_tar_decay[ac_tar_decay.size() - 1]) / (ac_tar_decay.size() - 1 - min_pos);
-                int cnt = 0;
-                for (int l = min_pos; l < ac_tar_decay.size() - 1; l++)
-                {
-                    if (ac_tar_decay[l] - ac_tar_decay[l + 1] <= 0)
-                    {
-                        cnt += 1;
-                    }
-                }
-                if (avg_decay <= 10 && cnt > 2)
-                {
-                    W1 = center.info.ac_tar;
-                    cout << "W1:" << min_pos << " " << avg_decay << " " << W1 << endl;
-                    //                            W1 = ac_tar_decay[min_pos];
-                }
-            }
-            if (center.info.ac_tar <= 3)
-            {
-                minor_terminal += 1;
-            }
-            if (center.info.ac_tar <= 3 && minor_terminal > 2800)
-            {
-                increment_update_light = false;
-            }
-            if (center.info.ac_tar <= 10)
-            {
-                local = false;
-            }
-            int mv_agent_num = center.info.mv_agent;
-            mv_agent_records.push_back(mv_agent_num);
-        }
-        double avg_t = 0;
-        for (int k = 0; k < dec_times.size(); k++)
+        bool is_parallel = true;
+        for (int k = 0; k < THREAD_NUM; k++)
         {
-            avg_t += dec_times[k];
+            threads.emplace_back(parallel_swarms, k, s_ids[k], e_ids[k], increment_update_light,
+                                 decay_ratio,
+                                 method, para_set_mode, W1, strict_, is_parallel, terminal, prob, increment_update_light, local);
         }
-        double avg_iteration = avg_t / (dec_times.size() * CLOCKS_PER_SEC);
-        outfile.flush();
-        outfile.close();
+        cout << "aaaaa" << endl;
+        // 等待其他线程join
+        for (int k = 0; k < THREAD_NUM; k++)
+        {
+            threads[k].join();
+        }
+        cout << "all join" << endl;
+        threads.clear();
 
-        vector<vector<int>> formed_shape;
-        for (int g = 0; g < width; g++)
+        cout << "aaaaa" << endl;
+        endT = clock();
+        dec_times.push_back((double)(endT - startT));
+
+        //record new positions for all agents
+        outfile << "agent positions:" << endl;
+        for (int k = 0; k < a_num_s[f]; k++)
         {
-            formed_shape.push_back(vector<int>());
-            for (int h = 0; h < height; h++)
+            if (k < a_num_s[f] - 1)
             {
-                if (center.agent_poses[g][h] >= 0)
-                {
-                    formed_shape[g].push_back(1);
-                }
-                else
-                {
-                    formed_shape[g].push_back(0);
-                }
+                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
+            }
+            else
+            {
+                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
             }
         }
-        double mse_similarity = getSimilarity(center.lf.grids, formed_shape);
-        exp_avg_similarity = exp_avg_similarity + mse_similarity;
-        outarg << "Experiment " << 0 << ":" << endl;
-        outarg << "The average decision time for each iteration is: " << avg_iteration << "s." << endl;
-        outarg << "Main: program exiting after " << terminal << " steps, and " << minor_terminal
-               << " steps for the last 3 positions, the similarity is " << mse_similarity << endl;
-        outarg << "Decay line:";
-        for (int k = 0; k < ac_tar_decay.size(); k++)
+        outfile << endl;
+        ac_tar_decay.push_back(center.info.ac_tar);
+        if (para_set_mode == 2)
         {
-            outarg << ' ' << ac_tar_decay[k];
+            W1 = double(center.info.ac_tar) / a_num_s[f];
         }
-        outarg << endl;
-        outarg << "The number of moving agent line:";
-        for (int k = 0; k < mv_agent_records.size(); k++)
+        else if (para_set_mode == 3)
         {
-            outarg << ' ' << mv_agent_records[k];
+            //                        W1 = sqrt(double(center.info.ac_tar) / a_num_s[f]);
+            W1 = log((center.info.ac_tar + 1)) / log(a_num_s[f] + 1);
         }
-        ac_tar_decay.clear();
-        mv_agent_records.clear();
-        outarg << endl;
-        outarg << "W1: " << W1 << ", is_increment: " << increment_update_light_s[f] << ", is_strict: "
-               << strict_ << ", decay_ratio: " << decay_ratio << ", method: " << method
-               << ", prob: " << prob << "." << endl;
+        else if (para_set_mode == 4)
+        {
+            W1 = 0.5 * sin(double(center.info.ac_tar) / a_num_s[f] * PI - PI * 0.5) + 0.5;
+        }
+        else if (para_set_mode == 1 && W1 == 0)
+        {
+            int mm = ac_tar_decay.size() - 10;
+            int min_pos = max(0, mm);
+            double avg_decay = double(ac_tar_decay[min_pos] - ac_tar_decay[ac_tar_decay.size() - 1]) / (ac_tar_decay.size() - 1 - min_pos);
+            int cnt = 0;
+            for (int l = min_pos; l < ac_tar_decay.size() - 1; l++)
+            {
+                if (ac_tar_decay[l] - ac_tar_decay[l + 1] <= 0)
+                {
+                    cnt += 1;
+                }
+            }
+            if (avg_decay <= 10 && cnt > 2)
+            {
+                W1 = center.info.ac_tar;
+                cout << "W1:" << min_pos << " " << avg_decay << " " << W1 << endl;
+                //                            W1 = ac_tar_decay[min_pos];
+            }
+        }
+        if (center.info.ac_tar <= 3)
+        {
+            minor_terminal += 1;
+        }
+        if (center.info.ac_tar <= 3 && minor_terminal > 2800)
+        {
+            increment_update_light = false;
+        }
+        if (center.info.ac_tar <= 10)
+        {
+            local = false;
+        }
+        int mv_agent_num = center.info.mv_agent;
+        mv_agent_records.push_back(mv_agent_num);
 
-        cout << "End an experiment! Clearing..." << endl;
-        vector<int> line(height, -1);
-        vector<vector<int>> array(width);
-        for (int k = 0; k < array.size(); k++)
-        {
-            array[k].assign(line.begin(), line.end());
-        }
-        center.agent_poses.swap(array);
+        // remember mutex status (locks)
+        memset(lock_stat, 0, sizeof(int) * agent_size);
         for (int k = 0; k < swarm.size(); k++)
         {
             if (swarm[k].guard.owns_lock())
             {
-                swarm[k].guard.unlock();
+                lock_stat[k] = 1;
             }
         }
-        //                cout<<"here1"<<endl;
 
-        if (center.info.ac_tar == 0)
+        // remember poses status
+        for (int k = 0; k < swarm.size(); k++)
         {
-            valid_exp += 1;
-            exp_avg_iter += terminal;
-            exp_avg_iter_t += avg_iteration;
+            poses[k * 2] = swarm[k].pos_x;
+            poses[k * 2 + 1] = swarm[k].pos_y;
         }
-        if (center.info.ac_tar <= 3)
-        {
-            minor_valid_exp += 1;
-            minor_exp_avg_iter = minor_exp_avg_iter + (terminal - minor_terminal);
-            minor_exp_avg_iter_t += avg_iteration;
-        }
-        //                cout<<"here2"<<endl;
 
-        exp_avg_iter = exp_avg_iter / valid_exp;
-        exp_avg_iter_t = exp_avg_iter_t / valid_exp;
-        exp_avg_similarity = exp_avg_similarity / exp_num;
-        minor_exp_avg_iter = minor_exp_avg_iter / minor_valid_exp;
-        minor_exp_avg_iter_t = minor_exp_avg_iter_t / minor_valid_exp;
-        cout << f << ": exp_avg_iter=" << exp_avg_iter << ", exp_avg_iter_time=" << exp_avg_iter_t << endl;
-        outarg << endl
-               << endl;
-        outarg << "After " << exp_num << " experiments, for shape " << f << ", avg_similarity=" << exp_avg_similarity
-               << ", " << valid_exp << " experiments success, exp_avg_iter=" << exp_avg_iter
-               << ", exp_avg_iter_time=" << exp_avg_iter_t << ", minor_exp_avg_iter=" << minor_exp_avg_iter
-               << ", minor_exp_avg_iter_time=" << minor_exp_avg_iter_t << endl;
-        outarg.flush();
-        outarg.close();
-        swarm.clear();
+        // remember field info
+        ac_tar[0] = center.info.ac_tar;
+        mv_agent[0] = center.info.mv_agent;
+        minor_termi[0] = minor_terminal;
+
+        // ====================================================================
+
+        if (!(center.info.ac_tar > 0 && terminal < 1000 and minor_terminal < 500))
+        {
+            cout << "...." << endl;
+            double avg_t = 0;
+            for (int k = 0; k < dec_times.size(); k++)
+            {
+                avg_t += dec_times[k];
+            }
+            double avg_iteration = avg_t / (dec_times.size() * CLOCKS_PER_SEC);
+            outfile.flush();
+            outfile.close();
+
+            vector<vector<int>> formed_shape;
+            for (int g = 0; g < width; g++)
+            {
+                formed_shape.push_back(vector<int>());
+                for (int h = 0; h < height; h++)
+                {
+                    if (center.agent_poses[g][h] >= 0)
+                    {
+                        formed_shape[g].push_back(1);
+                    }
+                    else
+                    {
+                        formed_shape[g].push_back(0);
+                    }
+                }
+            }
+            double mse_similarity = getSimilarity(center.lf.grids, formed_shape);
+            exp_avg_similarity = exp_avg_similarity + mse_similarity;
+            outarg << "Experiment " << 0 << ":" << endl;
+            outarg << "The average decision time for each iteration is: " << avg_iteration << "s." << endl;
+            outarg << "Main: program exiting after " << terminal << " steps, and " << minor_terminal
+                   << " steps for the last 3 positions, the similarity is " << mse_similarity << endl;
+            outarg << "Decay line:";
+            for (int k = 0; k < ac_tar_decay.size(); k++)
+            {
+                outarg << ' ' << ac_tar_decay[k];
+            }
+            outarg << endl;
+            outarg << "The number of moving agent line:";
+            for (int k = 0; k < mv_agent_records.size(); k++)
+            {
+                outarg << ' ' << mv_agent_records[k];
+            }
+            ac_tar_decay.clear();
+            mv_agent_records.clear();
+            outarg << endl;
+            outarg << "W1: " << W1 << ", is_increment: " << increment_update_light_s[f] << ", is_strict: "
+                   << strict_ << ", decay_ratio: " << decay_ratio << ", method: " << method
+                   << ", prob: " << prob << "." << endl;
+
+            cout << "End an experiment! Clearing..." << endl;
+            vector<int> line(height, -1);
+            vector<vector<int>> array(width);
+            for (int k = 0; k < array.size(); k++)
+            {
+                array[k].assign(line.begin(), line.end());
+            }
+            center.agent_poses.swap(array);
+            for (int k = 0; k < swarm.size(); k++)
+            {
+                if (swarm[k].guard.owns_lock())
+                {
+                    swarm[k].guard.unlock();
+                }
+            }
+            //                cout<<"here1"<<endl;
+
+            if (center.info.ac_tar == 0)
+            {
+                valid_exp += 1;
+                exp_avg_iter += terminal;
+                exp_avg_iter_t += avg_iteration;
+            }
+            if (center.info.ac_tar <= 3)
+            {
+                minor_valid_exp += 1;
+                minor_exp_avg_iter = minor_exp_avg_iter + (terminal - minor_terminal);
+                minor_exp_avg_iter_t += avg_iteration;
+            }
+            //                cout<<"here2"<<endl;
+
+            exp_avg_iter = exp_avg_iter / valid_exp;
+            exp_avg_iter_t = exp_avg_iter_t / valid_exp;
+            exp_avg_similarity = exp_avg_similarity / exp_num;
+            minor_exp_avg_iter = minor_exp_avg_iter / minor_valid_exp;
+            minor_exp_avg_iter_t = minor_exp_avg_iter_t / minor_valid_exp;
+            cout << f << ": exp_avg_iter=" << exp_avg_iter << ", exp_avg_iter_time=" << exp_avg_iter_t << endl;
+            outarg << endl
+                   << endl;
+            outarg << "After " << exp_num << " experiments, for shape " << f << ", avg_similarity=" << exp_avg_similarity
+                   << ", " << valid_exp << " experiments success, exp_avg_iter=" << exp_avg_iter
+                   << ", exp_avg_iter_time=" << exp_avg_iter_t << ", minor_exp_avg_iter=" << minor_exp_avg_iter
+                   << ", minor_exp_avg_iter_time=" << minor_exp_avg_iter_t << endl;
+            outarg.flush();
+            outarg.close();
+            swarm.clear();
+            cout << "return 1" << endl;
+            return 1;
+        }
     }
+    cout << "return 0" << endl;
     return 0;
 }
 
-int main(int argc, char **argv)
-{
-    oneStep();
-}
+// int main(int argc, char **argv)
+// {
+//     // int res = get_a_num(43, 43);
+//     // cout<< res<<endl;
+//     // int pos = new int();
+//     int agent_num = get_a_num(width, height);
+//     cout << agent_num << endl;
+//     int termi = 0;
+//     int *minor_termi = new int(0);
+//     int *poses = new int[2 * agent_num];
+//     cout << sizeof(int) * 2 * agent_num << endl;
+//     memset(poses, 0, sizeof(int) * 2 * agent_num);
+//     int *lock_stat = new int[agent_num];
+//     memset(lock_stat, 0, sizeof(int) * agent_num);
+//     int *ac_tar = new int(0);
+//     int *mv_agent = new int(0);
+//     oneStep(termi, minor_termi, width, height, agent_num, poses, lock_stat, ac_tar, mv_agent, true);
+//     termi++;
+//     while (true)
+//     {
+//         cout << "!!" << endl;
+//         int res = oneStep(termi, minor_termi, width, height, agent_num, poses, lock_stat, ac_tar, mv_agent, false);
+//         termi++;
+//         cout << termi - 1 << ":" << res << endl;
+//         if (res == 1)
+//         {
+//             cout << "End!";
+//             break;
+//         }
+//     }
+
+//     // for (int i = 0; i < agent_num; i++)
+//     // {
+//     //     cout << "(" << poses[2 * i] << "," << poses[2 * i + 1] << endl;
+//     // }
+// }
