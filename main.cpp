@@ -20,8 +20,8 @@ const string RUN_ENV = "WIN";
 //const string RUN_ENV = "LINUX";
 const int max_agent = 50000;
 const int light_intensity = 1000;
-const int width = 43;
-const int height = 43;
+const int width = 16;
+const int height = 16;
 mutex locks[width][height];
 mutex cloud_mutex;
 enum Agent_num_mode
@@ -452,8 +452,8 @@ void Agent::parallel_running(bool incremental, double decay_ratio, int method, i
         {
             if (rand_less.size() > 0)
             {
-                default_random_engine generator{random_device{}()};
-                shuffle(rand_less.begin(), rand_less.end(), generator);
+                // default_random_engine generator{random_device{}()};
+                random_shuffle(rand_less.begin(), rand_less.end());
                 for (int t = 0; t <= (rand_less.size() - 1); t++)
                 {
                     temp_guard = unique_lock<mutex>(locks[this->rand_less[t][0]][this->rand_less[t][1]], defer_lock);
@@ -503,6 +503,7 @@ void Agent::parallel_running(bool incremental, double decay_ratio, int method, i
     pos_y = next_y;
 }
 
+int get_a_num(int width, int height) asm("get_a_num");
 int get_a_num(int width, int height)
 {
     string dictionary, out_dict;
@@ -510,8 +511,8 @@ int get_a_num(int width, int height)
     {
         //        dictionary =
         //                "D:\\projects\\CLionProjects\\InitSettingGenerator\\exp\\" + to_string(width) + '_' + to_string(height);
-        dictionary = ".\\data\\" + to_string(width) + '_' + to_string(height);
-        out_dict = ".\\data\\method";
+        dictionary = "data/" + to_string(width) + '_' + to_string(height);
+        out_dict = "data/method";
     }
     else if (RUN_ENV == "MAC")
     {
@@ -558,17 +559,18 @@ int get_a_num(int width, int height)
     return a_num;
 }
 
+int oneStep(int termi, int *minor_termi, int width, int height, int *poses, int *ac_tar, int *mv_agent, int *init_poses, bool start) asm("oneStep");
 /*random initilization*/
 // poses size: 2*swarm size; lock_stat size: swarm size
-int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, int *poses, int *lock_stat, int *ac_tar, int *mv_agent, bool start)
+int oneStep(int termi, int *minor_termi, int width, int height, int *poses, int *ac_tar, int *mv_agent, int *init_poses, bool start)
 {
     string dictionary, out_dict;
     if (RUN_ENV == "WIN")
     {
         //        dictionary =
         //                "D:\\projects\\CLionProjects\\InitSettingGenerator\\exp\\" + to_string(width) + '_' + to_string(height);
-        dictionary = ".\\data\\" + to_string(width) + '_' + to_string(height);
-        out_dict = ".\\data\\method";
+        dictionary = "data/" + to_string(width) + '_' + to_string(height);
+        out_dict = "data/method";
     }
     else if (RUN_ENV == "MAC")
     {
@@ -612,7 +614,7 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
             string temp;
             if (RUN_ENV == "WIN")
             {
-                temp = dictionary + '\\' + ptr->d_name;
+                temp = dictionary + '/' + ptr->d_name;
             }
             else
             {
@@ -675,7 +677,6 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
             swarm.push_back(Agent());
         }
 
-        cout << "asdasd" << endl;
         int exp_num = 20;
         double exp_avg_iter = 0;
         double exp_avg_iter_t = 0;
@@ -695,13 +696,14 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
             out_arg = out_dict + "/args_" + to_string(0) + "_" + to_string(width) + "_" +
                       to_string(height) + name_posts[f];
         }
-        ofstream outarg(out_arg, ios::app);
+        // ofstream outarg(out_arg, ios::app);
 
         //read the grid environment
         fstream infile;
         infile.open(filelist[f], ios::in);
         if (!infile)
         {
+            cout << filelist[f];
             cout << "open failed" << endl;
             exit(1);
         }
@@ -753,6 +755,8 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
                 valid_l[max_size - 1] = valid_l[rand_p];
                 valid_l[rand_p] = tmp;
                 max_size--;
+                init_poses[2 * r] = px;
+                init_poses[2 * r + 1] = py;
             }
         }
         else // restore agent poses data
@@ -780,24 +784,24 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
                        to_string(width) + "_" + to_string(height) +
                        name_posts[f];
         }
-        ofstream outfile(out_name, ios::app);
-        outfile << "arguments: " << width << ' ' << height << ' ' << a_num_s[f] << ' ' << THREAD_NUM
-                << endl;
-        outfile << "agent positions:" << endl;
-        for (int k = 0; k < a_num_s[f]; k++)
-        {
-            if (k < a_num_s[f] - 1)
-            {
-                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
-                // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
-            }
-            else
-            {
-                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
-                // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << endl;
-            }
-        }
-        outfile << endl;
+        // ofstream outfile(out_name, ios::app);
+        // outfile << "arguments: " << width << ' ' << height << ' ' << a_num_s[f] << ' ' << THREAD_NUM
+        //         << endl;
+        // outfile << "agent positions:" << endl;
+        // for (int k = 0; k < a_num_s[f]; k++)
+        // {
+        //     if (k < a_num_s[f] - 1)
+        //     {
+        //         outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
+        //         // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
+        //     }
+        //     else
+        //     {
+        //         outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
+        //         // cout << swarm[k].pos_x << ',' << swarm[k].pos_y << endl;
+        //     }
+        // }
+        // outfile << endl;
 
         //arguments that will affect the formation process
         //1+1:光源中心汇聚 2+2:驱散,根据相对位置体现为向内部驱赶/向凸出边缘驱赶 2+3:在随机性有利于打破少数分散点形成的相对震荡状态
@@ -910,33 +914,30 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
                                  decay_ratio,
                                  method, para_set_mode, W1, strict_, is_parallel, terminal, prob, increment_update_light, local);
         }
-        cout << "aaaaa" << endl;
         // 等待其他线程join
         for (int k = 0; k < THREAD_NUM; k++)
         {
             threads[k].join();
         }
-        cout << "all join" << endl;
         threads.clear();
 
-        cout << "aaaaa" << endl;
         endT = clock();
         dec_times.push_back((double)(endT - startT));
 
         //record new positions for all agents
-        outfile << "agent positions:" << endl;
-        for (int k = 0; k < a_num_s[f]; k++)
-        {
-            if (k < a_num_s[f] - 1)
-            {
-                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
-            }
-            else
-            {
-                outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
-            }
-        }
-        outfile << endl;
+        // outfile << "agent positions:" << endl;
+        // for (int k = 0; k < a_num_s[f]; k++)
+        // {
+        //     if (k < a_num_s[f] - 1)
+        //     {
+        //         outfile << swarm[k].pos_x << ',' << swarm[k].pos_y << ' ';
+        //     }
+        //     else
+        //     {
+        //         outfile << swarm[k].pos_x << ',' << swarm[k].pos_y;
+        //     }
+        // }
+        // outfile << endl;
         ac_tar_decay.push_back(center.info.ac_tar);
         if (para_set_mode == 2)
         {
@@ -987,14 +988,14 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
         mv_agent_records.push_back(mv_agent_num);
 
         // remember mutex status (locks)
-        memset(lock_stat, 0, sizeof(int) * agent_size);
-        for (int k = 0; k < swarm.size(); k++)
-        {
-            if (swarm[k].guard.owns_lock())
-            {
-                lock_stat[k] = 1;
-            }
-        }
+        // memset(lock_stat, 0, sizeof(int) * agent_size);
+        // for (int k = 0; k < swarm.size(); k++)
+        // {
+        //     if (swarm[k].guard.owns_lock())
+        //     {
+        //         lock_stat[k] = 1;
+        //     }
+        // }
 
         // remember poses status
         for (int k = 0; k < swarm.size(); k++)
@@ -1019,8 +1020,8 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
                 avg_t += dec_times[k];
             }
             double avg_iteration = avg_t / (dec_times.size() * CLOCKS_PER_SEC);
-            outfile.flush();
-            outfile.close();
+            // outfile.flush();
+            // outfile.close();
 
             vector<vector<int>> formed_shape;
             for (int g = 0; g < width; g++)
@@ -1040,27 +1041,27 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
             }
             double mse_similarity = getSimilarity(center.lf.grids, formed_shape);
             exp_avg_similarity = exp_avg_similarity + mse_similarity;
-            outarg << "Experiment " << 0 << ":" << endl;
-            outarg << "The average decision time for each iteration is: " << avg_iteration << "s." << endl;
-            outarg << "Main: program exiting after " << terminal << " steps, and " << minor_terminal
-                   << " steps for the last 3 positions, the similarity is " << mse_similarity << endl;
-            outarg << "Decay line:";
-            for (int k = 0; k < ac_tar_decay.size(); k++)
-            {
-                outarg << ' ' << ac_tar_decay[k];
-            }
-            outarg << endl;
-            outarg << "The number of moving agent line:";
-            for (int k = 0; k < mv_agent_records.size(); k++)
-            {
-                outarg << ' ' << mv_agent_records[k];
-            }
+            // outarg << "Experiment " << 0 << ":" << endl;
+            // outarg << "The average decision time for each iteration is: " << avg_iteration << "s." << endl;
+            // outarg << "Main: program exiting after " << terminal << " steps, and " << minor_terminal
+            //        << " steps for the last 3 positions, the similarity is " << mse_similarity << endl;
+            // outarg << "Decay line:";
+            // for (int k = 0; k < ac_tar_decay.size(); k++)
+            // {
+            //     outarg << ' ' << ac_tar_decay[k];
+            // }
+            // outarg << endl;
+            // outarg << "The number of moving agent line:";
+            // for (int k = 0; k < mv_agent_records.size(); k++)
+            // {
+            //     outarg << ' ' << mv_agent_records[k];
+            // }
             ac_tar_decay.clear();
             mv_agent_records.clear();
-            outarg << endl;
-            outarg << "W1: " << W1 << ", is_increment: " << increment_update_light_s[f] << ", is_strict: "
-                   << strict_ << ", decay_ratio: " << decay_ratio << ", method: " << method
-                   << ", prob: " << prob << "." << endl;
+            // outarg << endl;
+            // outarg << "W1: " << W1 << ", is_increment: " << increment_update_light_s[f] << ", is_strict: "
+            //        << strict_ << ", decay_ratio: " << decay_ratio << ", method: " << method
+            //        << ", prob: " << prob << "." << endl;
 
             cout << "End an experiment! Clearing..." << endl;
             vector<int> line(height, -1);
@@ -1099,20 +1100,19 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
             minor_exp_avg_iter = minor_exp_avg_iter / minor_valid_exp;
             minor_exp_avg_iter_t = minor_exp_avg_iter_t / minor_valid_exp;
             cout << f << ": exp_avg_iter=" << exp_avg_iter << ", exp_avg_iter_time=" << exp_avg_iter_t << endl;
-            outarg << endl
-                   << endl;
-            outarg << "After " << exp_num << " experiments, for shape " << f << ", avg_similarity=" << exp_avg_similarity
-                   << ", " << valid_exp << " experiments success, exp_avg_iter=" << exp_avg_iter
-                   << ", exp_avg_iter_time=" << exp_avg_iter_t << ", minor_exp_avg_iter=" << minor_exp_avg_iter
-                   << ", minor_exp_avg_iter_time=" << minor_exp_avg_iter_t << endl;
-            outarg.flush();
-            outarg.close();
+            // outarg << endl
+            //        << endl;
+            // outarg << "After " << exp_num << " experiments, for shape " << f << ", avg_similarity=" << exp_avg_similarity
+            //        << ", " << valid_exp << " experiments success, exp_avg_iter=" << exp_avg_iter
+            //        << ", exp_avg_iter_time=" << exp_avg_iter_t << ", minor_exp_avg_iter=" << minor_exp_avg_iter
+            //        << ", minor_exp_avg_iter_time=" << minor_exp_avg_iter_t << endl;
+            // outarg.flush();
+            // outarg.close();
             swarm.clear();
-            cout << "return 1" << endl;
             return 1;
         }
     }
-    cout << "return 0" << endl;
+    swarm.clear();
     return 0;
 }
 
@@ -1126,29 +1126,28 @@ int oneStep(int termi, int *minor_termi, int width, int height, int agent_size, 
 //     int termi = 0;
 //     int *minor_termi = new int(0);
 //     int *poses = new int[2 * agent_num];
-//     cout << sizeof(int) * 2 * agent_num << endl;
 //     memset(poses, 0, sizeof(int) * 2 * agent_num);
-//     int *lock_stat = new int[agent_num];
-//     memset(lock_stat, 0, sizeof(int) * agent_num);
+//     // int *lock_stat = new int[agent_num];
+//     // memset(lock_stat, 0, sizeof(int) * agent_num);
+//     int *init_poses = new int[2 * agent_num];
+//     memset(init_poses, 0, sizeof(int) * 2 * agent_num);
 //     int *ac_tar = new int(0);
 //     int *mv_agent = new int(0);
-//     oneStep(termi, minor_termi, width, height, agent_num, poses, lock_stat, ac_tar, mv_agent, true);
+//     oneStep(termi, minor_termi, width, height, agent_num, poses, ac_tar, mv_agent, init_poses, true);
 //     termi++;
 //     while (true)
 //     {
-//         cout << "!!" << endl;
-//         int res = oneStep(termi, minor_termi, width, height, agent_num, poses, lock_stat, ac_tar, mv_agent, false);
+//         int res = oneStep(termi, minor_termi, width, height, agent_num, poses, ac_tar, mv_agent, init_poses, false);
 //         termi++;
-//         cout << termi - 1 << ":" << res << endl;
 //         if (res == 1)
 //         {
-//             cout << "End!";
+//             cout << "End!" << endl;
 //             break;
 //         }
 //     }
 
-//     // for (int i = 0; i < agent_num; i++)
-//     // {
-//     //     cout << "(" << poses[2 * i] << "," << poses[2 * i + 1] << endl;
-//     // }
+//     for (int i = 0; i < agent_num; i++)
+//     {
+//         cout << "(" << poses[2 * i] << "," << poses[2 * i + 1] << ")" << endl;
+//     }
 // }
