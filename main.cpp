@@ -20,9 +20,7 @@ const string RUN_ENV = "WIN";
 //const string RUN_ENV = "LINUX";
 const int max_agent = 50000;
 const int light_intensity = 1000;
-const int width = 16;
-const int height = 16;
-mutex locks[width][height];
+mutex **locks;
 mutex cloud_mutex;
 enum Agent_num_mode
 {
@@ -135,7 +133,7 @@ void Agent::set_config(int id, int px, int py, int r)
     pos_y = py;
     if (guard.owns_lock())
     {
-        //        cout<<index<<" owns."<<endl;
+        cout << index << " owns." << endl;
         guard.unlock();
         //        guard.release();
     }
@@ -564,6 +562,11 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
 // poses size: 2*swarm size; lock_stat size: swarm size
 int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, int agent_num, int *grids, int *poses, int *ac_tar, int *mv_agent, int *init_poses, bool start)
 {
+    locks = new mutex *[width];
+    for (int i = 0; i < width; i++)
+    {
+        locks[i] = new mutex[height];
+    }
     // string dictionary, out_dict;
     // if (RUN_ENV == "WIN")
     // {
@@ -601,7 +604,6 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
     vector<string> filelist;
     vector<int> a_num_s;
 
-    cout << shape_num << " " << agent_num << endl;
     shape_nums.push_back(shape_num);
     a_num_s.push_back(agent_num);
 
@@ -714,6 +716,7 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
             }
         }
 
+
     // fstream infile;
     // infile.open(filelist[f], ios::in);
     // if (!infile)
@@ -784,6 +787,7 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
             center.agent_poses[px][py] = r;
         }
     }
+
     //                cout<<"swarm refresh"<<endl;
     //record the initialization
     string out_name;
@@ -837,6 +841,7 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
     {
         W1 = 1;
     }
+
 
     //强制不离开区域内的策略有利于快速收敛
     //但针对多目标时,该策略可能形成"路障",因此在多目标早期(中心汇聚阶段)可以放宽要求,在基本按照各图案需求完成中心汇聚分配之后,
@@ -1028,7 +1033,6 @@ int oneStep(int termi, int *minor_termi, int width, int height, int shape_num, i
 
     if (!(center.info.ac_tar > 0 && terminal < 1000 and minor_terminal < 500))
     {
-        cout << "...." << endl;
         double avg_t = 0;
         for (int k = 0; k < dec_times.size(); k++)
         {
